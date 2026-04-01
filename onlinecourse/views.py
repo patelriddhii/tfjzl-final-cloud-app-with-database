@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment
+from .models import Course, Enrollment, Question, Choice, Submission
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -112,6 +112,42 @@ def enroll(request, course_id):
          # Redirect to show_exam_result with the submission id
 #def submit(request, course_id):
 
+def submit(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    user = request.user
+    # Get enrollment for current user and course
+    enrollment = Enrollment.objects.get(user=user, course=course)
+    # Create a new submission
+    submission = Submission.objects.create(enrollment=enrollment)
+    
+    # Extract selected choices from the POST data
+    # The template uses 'choice_{{choice.id}}' as the input name
+    selected_ids = [value for key, value in request.POST.items() if 'choice_' in key]
+    choices = Choice.objects.filter(id__in=selected_ids)
+    
+    # Associate choices with the submission
+    submission.choices.set(choices)
+    
+    return HttpResponseRedirect(reverse(viewname='onlinecourse:show_exam_result', args=(course_id, submission.id,)))
+
+def show_exam_result(request, course_id, submission_id):
+    context = {}
+    course = get_object_or_404(Course, pk=course_id)
+    submission = Submission.objects.get(id=submission_id)
+    selected_choices = submission.choices.all()
+
+    total_score = 0
+    # Calculate the total score
+    for question in course.question_set.all():
+        # Use the helper method we added to the Question model earlier
+        if question.is_get_score(selected_choices.values_list('id', flat=True)):
+            total_score += question.grade
+
+    context['course'] = course
+    context['grade'] = total_score
+    context['submission'] = submission
+    
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
 
 # An example method to collect the selected choices from the exam form from the request object
 def extract_answers(request):
